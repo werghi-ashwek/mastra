@@ -1,6 +1,14 @@
 import { describe, expectTypeOf, it } from 'vitest';
 import { z } from 'zod/v4';
 import { Agent } from '../agent';
+import {
+  BatchPartsProcessor,
+  ProcessorStepInputSchema,
+  ProcessorStepOutputSchema,
+  ProcessorStepSchema,
+  TokenLimiterProcessor,
+} from '../processors';
+import type { Processor } from '../processors';
 import { createTool } from '../tools';
 import { createWorkflow } from './create';
 import { createStep } from './workflow';
@@ -793,5 +801,72 @@ describe('declarative builder input chaining', () => {
     createWorkflow({ id: 'wf', inputSchema: z.object({ value: z.number() }), outputSchema: z.any() })
       // @ts-expect-error - { value: number } is not assignable to agent input { prompt: string }
       .then(createStep(agent));
+  });
+});
+
+// Regression: https://github.com/mastra-ai/mastra/issues/27577
+describe('processor step chaining in workflows', () => {
+  const tagInput = {
+    id: 'tag-input',
+    name: 'Tag Input',
+    processInput: async ({ messages }) => messages,
+  } satisfies Processor;
+
+  const tagOutput = {
+    id: 'tag-output',
+    name: 'Tag Output',
+    processOutputResult: async ({ messages }) => messages,
+  } satisfies Processor;
+
+  const topicGuard = {
+    id: 'topic-guard',
+    processInput: async ({ messages }) => messages,
+  } satisfies Processor;
+
+  const moderation = {
+    id: 'moderation',
+    processInput: async ({ messages }) => messages,
+  } satisfies Processor;
+
+  it('allows chaining object-literal processors with .then()', () => {
+    const pipeline = createWorkflow({
+      id: 'guardrail-pipeline',
+      inputSchema: ProcessorStepSchema,
+      outputSchema: ProcessorStepSchema,
+    })
+      .then(createStep(tagInput))
+      .then(createStep(tagOutput))
+      .commit();
+
+    expectTypeOf(pipeline).not.toBeNever();
+  });
+
+  it('allows chaining class processor instances with .then() and .parallel()', () => {
+    const pipeline = createWorkflow({
+      id: 'class-processor-pipeline',
+      inputSchema: ProcessorStepSchema,
+      outputSchema: ProcessorStepSchema,
+    })
+      .then(createStep(new TokenLimiterProcessor(1000)))
+      .then(createStep(new BatchPartsProcessor()))
+      .parallel([createStep(topicGuard), createStep(moderation)])
+      .map(async ({ inputData }) => inputData['processor:topic-guard'] || inputData['processor:moderation'])
+      .then(createStep(tagOutput))
+      .commit();
+
+    expectTypeOf(pipeline).not.toBeNever();
+  });
+
+  it('allows chaining processors when workflow uses ProcessorStepInputSchema and ProcessorStepOutputSchema', () => {
+    const pipeline = createWorkflow({
+      id: 'io-schema-processor-pipeline',
+      inputSchema: ProcessorStepInputSchema,
+      outputSchema: ProcessorStepOutputSchema,
+    })
+      .then(createStep(tagInput))
+      .then(createStep(tagOutput))
+      .commit();
+
+    expectTypeOf(pipeline).not.toBeNever();
   });
 });

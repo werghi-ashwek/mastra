@@ -468,7 +468,7 @@ export function createStep<TProcessorId extends string>(
   `processor:${TProcessorId}`,
   unknown,
   InferPublicSchema<typeof ProcessorStepInputSchema>,
-  InferPublicSchema<typeof ProcessorStepOutputSchema>,
+  InferPublicSchema<typeof ProcessorStepInputSchema>,
   unknown,
   unknown,
   DefaultEngineType
